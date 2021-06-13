@@ -1,0 +1,33 @@
+body {
+    font-family: Calibri, sans-serif;
+    color: #808080
+}
+.node_container {
+    border: solid #57d1e5;
+    border-radius: 0.8em;
+    margin: 0.7em 0;
+    padding: 0.3em
+}
+input, label {
+    display:block;
+}
+label {
+    margin-top: 0.7em
+}
+.host_params, .user_data, .scylla_version, .remove {
+    float: left;
+    margin: 0.7em 0.7em;
+}
+.seed_node {
+    margin-bottom: 0.7em
+}
+.clearfix::before, .clearfix::after{
+    content: "";
+    display: table
+}
+.clearfix::after{
+    clear: both
+}
+form {
+    display: none
+}
