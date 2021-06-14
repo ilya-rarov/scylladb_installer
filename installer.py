@@ -1,8 +1,18 @@
+#!/usr/bin/env python3
+
 from controller import ControllerDataBase, InstallationState
 from concurrent.futures.thread import ThreadPoolExecutor
 from enum import Enum, unique
 from time import sleep
 from ssh_interface.ssh import SSHConnection
+
+
+class CommandExecutionError(Exception):
+    pass
+
+
+class OSIdentificationError(Exception):
+    pass
 
 
 @unique
@@ -75,37 +85,120 @@ class ScyllaInstaller:
 
     def get_os_version(self):
         shell_command = 'cat /etc/os-release'
-        stdout, stderr, exit_code = self._ssh_connection.execute_command(command=shell_command)
         os_release_dict = {}
-        linux_distribution = ''
-        if exit_code == 0:
-            for line in stdout:
-                os_release_parameter = line.strip().split('=')
-                os_release_dict[os_release_parameter[0]] = os_release_parameter[1].replace('"', '')
-            for os_type in SupportedDistributions:
-                if os_type.value['ID'] == os_release_dict['ID'] \
+        stdout, stderr, exit_code = self._execute_shell_command(command_to_execute=shell_command)
+        for line in stdout:
+            os_release_parameter = line.strip().split('=')
+            os_release_dict[os_release_parameter[0]] = os_release_parameter[1].replace('"', '')
+        for os_type in SupportedDistributions:
+            if os_type.value['ID'] == os_release_dict['ID'] \
                         and os_type.value['VERSION_ID'] == os_release_dict['VERSION_ID']:
-                    linux_distribution = os_type.get_name()
-                    break
-                else:
-                    pass
-        else:
-            pass
-        return linux_distribution
+                linux_distribution = os_type.get_name()
+                return linux_distribution
+        raise OSIdentificationError(f"OS type of {os_release_dict['ID']} {os_release_dict['VERSION_ID']} \
+                                      has not been recognized")
 
     def install(self):
-        value_to_update = {'global_status': InstallationState.IN_PROGRESS.value}
-        self._installer_db.update_data(table='installations', condition=f'id = {self._installation_id}',
-                                       **value_to_update)
-        self._os_version = self.get_os_version()
-        value_to_update = {'os_version': self._os_version}
-        self._installer_db.update_data(table='nodes', condition=f'host = \'{self._host}\'',
-                                       **value_to_update)
-        self.set_status(status='OS identified')
+        self._set_global_status(global_status_value=InstallationState.IN_PROGRESS.value)
+        try:
+            self._os_version = self.get_os_version()
+        except Exception:
+            self._set_global_status(global_status_value=InstallationState.FAILED.value)
+        else:
+            value_to_update = {'os_version': self._os_version}
+            self._installer_db.update_data(table='nodes', condition=f'host = \'{self._host}\'', **value_to_update)
+            self._add_new_status(status='OS identified')
+        if 'UBUNTU' in self._os_version.upper():
+            try:
+                self._install_on_ubuntu()
+            except Exception:
+                self._set_global_status(global_status_value=InstallationState.FAILED.value)
+            else:
+                self._add_new_status(status='Scylla installed')
+        elif 'CENTOS' in self._os_version.upper():
+            try:
+                self._install_on_centos()
+            except Exception:
+                self._set_global_status(global_status_value=InstallationState.FAILED.value)
+            else:
+                self._add_new_status(status='Scylla installed')
+        elif 'DEBIAN' in self._os_version.upper():
+            try:
+                self._install_on_debian()
+            except Exception:
+                self._set_global_status(global_status_value=InstallationState.FAILED.value)
+            else:
+                self._add_new_status(status='Scylla installed')
 
-    def set_status(self, status):
+    def _install_on_ubuntu(self):
+        if '16.04' in self._os_version:
+            shell_command = 'apt-get install -y apt-transport-https'
+            self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 5e08fbd8b5d6ec9c'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = f'curl -L --output /etc/apt/sources.list.d/scylla.list \
+                         http://downloads.scylladb.com/deb/ubuntu/scylla-{self._db_version}-$(lsb_release -s -c).list'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-get update'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-get install -y scylla'
+        self._execute_shell_command(command_to_execute=shell_command)
+        if '18.04' in self._os_version or '20.04' in self._os_version:
+            shell_command = 'apt-get install -y openjdk-8-jre-headless'
+            self._execute_shell_command(command_to_execute=shell_command)
+            shell_command = 'update-java-alternatives --jre-headless -s java-1.8.0-openjdk-amd64'
+            self._execute_shell_command(command_to_execute=shell_command)
+
+    def _install_on_centos(self):
+        shell_command = 'apt-get install -y apt-transport-https'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'yum install -y epel-release'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = f'curl -o /etc/yum.repos.d/scylla.repo -L http://repositories.scylladb.com/scylla/repo/\
+                         a3df46bd-e48a-4a51-bef7-ccbdc819a9c5/centos/scylladb-{self._db_version}.repo'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'yum install -y scylla'
+        self._execute_shell_command(command_to_execute=shell_command)
+
+    def _install_on_debian(self):
+        if '9' in self._os_version:
+            shell_command = 'apt-get update'
+            self._execute_shell_command(command_to_execute=shell_command)
+            shell_command = 'apt-get install -y apt-transport-https dirmngr'
+            self._execute_shell_command(command_to_execute=shell_command)
+            shell_command = f'curl -L --output /etc/apt/sources.list.d/scylla.list http://repositories.scylladb.com/\
+                             scylla/repo/deb/debian/scylladb-{self._db_version}-$(lsb_release -s -c).list'
+            self._execute_shell_command(command_to_execute=shell_command)
+        else:
+            shell_command = f'curl -L --output /etc/apt/sources.list.d/scylla.list http://downloads.scylladb.com/deb/\
+                             debian/scylla-{self._db_version}-$(lsb_release -c -s).list'
+            self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 5e08fbd8b5d6ec9c'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-get update'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-get install -y scylla'
+        self._execute_shell_command(command_to_execute=shell_command)
+
+    def _add_new_status(self, status):
         self._installer_db.insert_data(table='statuses', columns=('status_name', 'installation_id'),
                                        values=f'(\'{status}\', \'{self._installation_id}\')')
+
+    def _execute_shell_command(self, command_to_execute):
+        stdout, stderr, exit_code = self._ssh_connection.execute_command(command=command_to_execute)
+        if exit_code != 0:
+            raise CommandExecutionError(f'Execution of command "{command_to_execute}" has failed!')
+        return stdout, stderr, exit_code
+
+    def _set_global_status(self, global_status_value):
+        if global_status_value == InstallationState.FAILED.value or \
+                global_status_value == InstallationState.SUCCEEDED.value:
+            value_to_update = {'global_status': global_status_value,
+                               'finish_timestamp': 'get_system_timestamp'}
+        else:
+            value_to_update = {'global_status': global_status_value}
+        self._installer_db.update_data(table='installations', condition=f'id = {self._installation_id}',
+                                       **value_to_update)
 
 
 if __name__ == '__main__':

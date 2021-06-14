@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import cherrypy
 from os import path
 from db_interface.sql_database_interface import MySQLDatabase
