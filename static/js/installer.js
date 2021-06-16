@@ -63,22 +63,20 @@ function removeNode(e) {
 }
 async function sendFormData() {
     let seedNodeSelector = document.querySelector('.seed_node').querySelector('select')
-    let seedNodeID = seedNodeSelector.selectedOptions[0].value
+    let seedNodeForm = document.getElementById(seedNodeSelector.selectedOptions[0].value)    
     let clusterName = document.querySelector("input[name='cluster_name']").value
     let arrayOfForms = []
     let objectToJSON = {}
+    
+    let seedNodeFormData = new FormData(seedNodeForm)
+    let seedNodeHost = seedNodeFormData.get('host')
     
     let forms = document.forms
     for (let i = 1; i < forms.length; i++) {
         let formData = new FormData(forms[i])
         
         formData.append('cluster_name', clusterName);
-        if (forms[i].id == seedNodeID) {
-            formData.append('seed_node', 'Y');
-        } 
-        else {
-            formData.append('seed_node', 'N');
-        }
+        formData.append('seed_node', seedNodeHost);
         
         let formDataObj = {};
         for(let [name, value] of formData) {

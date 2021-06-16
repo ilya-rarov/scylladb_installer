@@ -36,8 +36,6 @@ class SSHConnection:
                            port=self._port,
                            username=self._user,
                            password=self._password)
-            # else:
-            #     raise MissingAuthInformation('The private key or password must be provided for authentication!')
             standard_input, standard_output, standard_error = client.exec_command(command)
             stdout = standard_output.readlines()
             stderr = standard_error.readlines()

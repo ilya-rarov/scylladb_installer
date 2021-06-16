@@ -4,7 +4,13 @@ from controller import ControllerDataBase, InstallationState
 from concurrent.futures.thread import ThreadPoolExecutor
 from enum import Enum, unique
 from time import sleep
+from datetime import datetime
 from ssh_interface.ssh import SSHConnection
+from configparser import ConfigParser
+from os import path
+import logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 class CommandExecutionError(Exception):
@@ -12,6 +18,14 @@ class CommandExecutionError(Exception):
 
 
 class OSIdentificationError(Exception):
+    pass
+
+
+class ConfigFileNotFound(Exception):
+    pass
+
+
+class LogLevelError(Exception):
     pass
 
 
@@ -104,31 +118,39 @@ class ScyllaInstaller:
             self._os_version = self.get_os_version()
         except Exception:
             self._set_global_status(global_status_value=InstallationState.FAILED.value)
+            LOGGER.error(msg=f'Installation on {self._host} failed!')
         else:
             value_to_update = {'os_version': self._os_version}
             self._installer_db.update_data(table='nodes', condition=f'host = \'{self._host}\'', **value_to_update)
             self._add_new_status(status='OS identified')
+            LOGGER.info(msg=f'Linux distribution on {self._host} is {self._os_version}!')
         if 'UBUNTU' in self._os_version.upper():
             try:
                 self._install_on_ubuntu()
             except Exception:
                 self._set_global_status(global_status_value=InstallationState.FAILED.value)
+                LOGGER.error(msg=f'Installation on {self._host} failed!')
             else:
                 self._add_new_status(status='Scylla installed')
+                LOGGER.info(msg=f'Installation on {self._host} succeeded!')
         elif 'CENTOS' in self._os_version.upper():
             try:
                 self._install_on_centos()
             except Exception:
                 self._set_global_status(global_status_value=InstallationState.FAILED.value)
+                LOGGER.error(msg=f'Installation on {self._host} failed!')
             else:
                 self._add_new_status(status='Scylla installed')
+                LOGGER.info(msg=f'Installation on {self._host} succeeded!')
         elif 'DEBIAN' in self._os_version.upper():
             try:
                 self._install_on_debian()
             except Exception:
                 self._set_global_status(global_status_value=InstallationState.FAILED.value)
+                LOGGER.error(msg=f'Installation on {self._host} failed!')
             else:
                 self._add_new_status(status='Scylla installed')
+                LOGGER.info(msg=f'Installation on {self._host} succeeded!')
 
     def _install_on_ubuntu(self):
         if '16.04' in self._os_version:
@@ -187,7 +209,13 @@ class ScyllaInstaller:
     def _execute_shell_command(self, command_to_execute):
         stdout, stderr, exit_code = self._ssh_connection.execute_command(command=command_to_execute)
         if exit_code != 0:
-            raise CommandExecutionError(f'Execution of command "{command_to_execute}" has failed!')
+            if stderr:
+                error_msg = '\n'.join(stderr)
+            else:
+                error_msg = '\n'.join(stdout)
+            LOGGER.error(msg=f'Execution of command "{command_to_execute}" failed! Error message:\n{error_msg}')
+            raise CommandExecutionError(f'Execution of command "{command_to_execute}" failed!')
+        LOGGER.info(msg=f'Execution of command "{command_to_execute}" succeeded!')
         return stdout, stderr, exit_code
 
     def _set_global_status(self, global_status_value):
@@ -199,6 +227,35 @@ class ScyllaInstaller:
             value_to_update = {'global_status': global_status_value}
         self._installer_db.update_data(table='installations', condition=f'id = {self._installation_id}',
                                        **value_to_update)
+
+
+def setup_logging():
+    config = ConfigParser()
+    config_path = './config/installer.conf'
+    if not path.exists(config_path):
+        raise ConfigFileNotFound(f"File '{config_path}' not found!")
+    config.read(config_path)
+    log_root_dir = config['log']['log_root_dir'].replace('"', '')
+    log_level = config['log']['log_level'].replace('"', '').upper()
+    if log_level == 'DEBUG':
+        log_level = logging.DEBUG
+    elif log_level == 'INFO':
+        log_level = logging.INFO
+    elif log_level == 'WARNING':
+        log_level = logging.WARNING
+    elif log_level == 'ERROR':
+        log_level = logging.ERROR
+    elif log_level == 'CRITICAL':
+        log_level = logging.CRITICAL
+    else:
+        raise LogLevelError(f"Log level {log_level} hasn't been recognized")
+    file_handler = logging.FileHandler(f'{log_root_dir}/installer_{datetime.now()}.log')
+    formatter = logging.Formatter("[%(asctime)s] - %(levelname)s - <%(module)s>: %(message)s")
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(log_level)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(log_level)
 
 
 if __name__ == '__main__':
