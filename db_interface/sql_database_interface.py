@@ -34,7 +34,7 @@ class MySQLDatabase(SQLDataBase):
         self._password = b64decode(password).decode('utf-8')
         self._database = database
         self._host = host
-        self._port = port
+        self._port = int(port)
         self._db_type = db_type
 
     def execute(self, query):
@@ -77,7 +77,7 @@ class MySQLDatabase(SQLDataBase):
     @staticmethod
     def replace_string(query):
         replacement = {'\'null\'': 'null',
-                       'get_system_timestamp': 'current_timestamp(6)'}
+                       '\'get_system_timestamp\'': 'current_timestamp(6)'}
         for k, v in replacement.items():
             query = query.replace(k, v)
         return query

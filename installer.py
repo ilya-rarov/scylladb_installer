@@ -2,15 +2,20 @@
 
 from controller import ControllerDataBase, InstallationState
 from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import TimeoutError
 from enum import Enum, unique
+import sys
 from time import sleep
 from datetime import datetime
 from ssh_interface.ssh import SSHConnection
-from configparser import ConfigParser
-from os import path
 import logging
+from config import ConfigObject
+from jinja2 import FileSystemLoader, Environment, select_autoescape
 
-LOGGER = logging.getLogger(__name__)
+env = Environment(
+    loader=FileSystemLoader('templates'),
+    autoescape=select_autoescape()
+)
 
 
 class CommandExecutionError(Exception):
@@ -21,12 +26,14 @@ class OSIdentificationError(Exception):
     pass
 
 
-class ConfigFileNotFound(Exception):
-    pass
-
-
-class LogLevelError(Exception):
-    pass
+@unique
+class Status(Enum):
+    OS_IDENTIFIED = 'OS identified'
+    SCYLLA_INSTALLED = 'Scylla installed'
+    SCYLLA_YAML_CREATED = 'scylla.yaml created'
+    SCYLLA_CONFIGURED = 'Scylla configured'
+    SCYLLA_STARTED = 'Scylla started'
+    SCYLLA_STRESSED = 'cassandra-stress completed'
 
 
 @unique
@@ -44,44 +51,38 @@ class SupportedDistributions(Enum):
 
 
 class ParallelObject:
-    def __init__(self, items, timeout=10, ignore_exceptions=False):
-        self._items = items
+    def __init__(self, timeout=1800):
         self._timeout = timeout
-        self._ignore_exceptions = ignore_exceptions
-
-    @property
-    def items(self):
-        return self._items
+        self._parallel_logger = logging.getLogger('installer.parallel_object')
 
     @property
     def timeout(self):
         return self._timeout
 
-    @property
-    def ignore_exceptions(self):
-        return self._ignore_exceptions
-
-    def run(self, fn):
-        futures = []
+    def run(self, functions):
+        futures = {}
         results = []
-        with ThreadPoolExecutor(max_workers=len(self.items)) as executor:
-            for parameter in self.items:
-                future = executor.submit(fn, parameter)
-                futures.append(future)
-            for future in futures:
+        with ThreadPoolExecutor(max_workers=len(functions)) as executor:
+            for host, fn in functions.items():
+                future = executor.submit(fn)
+                futures[host] = future
+            for host, future in futures.items():
+                self._parallel_logger.info(msg=f"Starting installation thread for host {host}")
                 try:
                     results.append(future.result(timeout=self.timeout))
-                except Exception:
-                    if self.ignore_exceptions:
-                        pass
-                    else:
-                        raise
+                except TimeoutError:
+                    self._parallel_logger.error(msg=f'Error: timeout of {self.timeout} seconds exceeded in thread '
+                                                    f'for host {host}!')
+                    raise
+                except Exception as e:
+                    self._parallel_logger.error(msg=f'Error in thread for host {host}: {e}')
+                    raise
         return results
 
 
 class ScyllaInstaller:
-    def __init__(self, installer_db, host, port, username, password, db_version, cluster_name, seed_node, os_version,
-                 installation_id):
+    def __init__(self, installer_db, log_config, host, port, username, password, db_version, cluster_name, seed_node,
+                 os_version, installation_id):
         self._installer_db = installer_db
         self._host = host
         self._port = port
@@ -92,6 +93,15 @@ class ScyllaInstaller:
         self._os_version = os_version
         self._installation_id = installation_id
         self._ssh_connection = SSHConnection(host=host, port=port, user=username, password=password)
+        log_level = getattr(logging, log_config['log_level'].upper(), None)
+        file_handler = logging.FileHandler(f"{log_config['log_root_dir']}/{host}_scylla_installation_"
+                                           f"{datetime.now().strftime('%d%m%Y_%H%M%S')}.log")
+        formatter = logging.Formatter("[%(asctime)s] - %(levelname)s: %(message)s")
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(log_level)
+        self._installation_logger = logging.getLogger(f'{host}_scylla_installation')
+        self._installation_logger.addHandler(file_handler)
+        self._installation_logger.setLevel(log_level)
 
     @property
     def host(self):
@@ -106,51 +116,51 @@ class ScyllaInstaller:
             os_release_dict[os_release_parameter[0]] = os_release_parameter[1].replace('"', '')
         for os_type in SupportedDistributions:
             if os_type.value['ID'] == os_release_dict['ID'] \
-                        and os_type.value['VERSION_ID'] == os_release_dict['VERSION_ID']:
+                    and os_type.value['VERSION_ID'] == os_release_dict['VERSION_ID']:
                 linux_distribution = os_type.get_name()
                 return linux_distribution
-        raise OSIdentificationError(f"OS type of {os_release_dict['ID']} {os_release_dict['VERSION_ID']} \
-                                      has not been recognized")
+        raise OSIdentificationError(f"OS type of {os_release_dict['ID']} {os_release_dict['VERSION_ID']} "
+                                    "has not been recognized")
 
     def install(self):
         self._set_global_status(global_status_value=InstallationState.IN_PROGRESS.value)
+        self._installation_logger.info(msg=f'Installation on {self._host} started.')
         try:
             self._os_version = self.get_os_version()
-        except Exception:
+        except Exception as e:
             self._set_global_status(global_status_value=InstallationState.FAILED.value)
-            LOGGER.error(msg=f'Installation on {self._host} failed!')
+            self._installation_logger.error(msg=f'Installation on {self._host} failed! Error message: {e}')
+            raise e
         else:
             value_to_update = {'os_version': self._os_version}
             self._installer_db.update_data(table='nodes', condition=f'host = \'{self._host}\'', **value_to_update)
-            self._add_new_status(status='OS identified')
-            LOGGER.info(msg=f'Linux distribution on {self._host} is {self._os_version}!')
+            self._add_new_status(status=Status.OS_IDENTIFIED.value)
+            self._installation_logger.info(msg=f'Linux distribution on {self._host} is {self._os_version}.')
+        try:
+            self._install_on_node()
+        except Exception as e:
+            self._set_global_status(global_status_value=InstallationState.FAILED.value)
+            self._installation_logger.error(msg=f'Installation on {self._host} failed! Error message: {e}')
+            raise e
+        else:
+            self._add_new_status(status=Status.SCYLLA_INSTALLED.value)
+            self._installation_logger.info(msg=f'Scylla binaries installed on {self._host}.')
+        try:
+            self._execute_post_install()
+        except Exception as e:
+            self._set_global_status(global_status_value=InstallationState.FAILED.value)
+            self._installation_logger.error(msg=f'Installation on {self._host} failed! Error message: {e}')
+            raise e
+        self._set_global_status(global_status_value=InstallationState.SUCCEEDED.value)
+        self._installation_logger.info(msg=f'Installation on {self._host} completed.')
+
+    def _install_on_node(self):
         if 'UBUNTU' in self._os_version.upper():
-            try:
-                self._install_on_ubuntu()
-            except Exception:
-                self._set_global_status(global_status_value=InstallationState.FAILED.value)
-                LOGGER.error(msg=f'Installation on {self._host} failed!')
-            else:
-                self._add_new_status(status='Scylla installed')
-                LOGGER.info(msg=f'Installation on {self._host} succeeded!')
+            self._install_on_ubuntu()
         elif 'CENTOS' in self._os_version.upper():
-            try:
-                self._install_on_centos()
-            except Exception:
-                self._set_global_status(global_status_value=InstallationState.FAILED.value)
-                LOGGER.error(msg=f'Installation on {self._host} failed!')
-            else:
-                self._add_new_status(status='Scylla installed')
-                LOGGER.info(msg=f'Installation on {self._host} succeeded!')
+            self._install_on_centos()
         elif 'DEBIAN' in self._os_version.upper():
-            try:
-                self._install_on_debian()
-            except Exception:
-                self._set_global_status(global_status_value=InstallationState.FAILED.value)
-                LOGGER.error(msg=f'Installation on {self._host} failed!')
-            else:
-                self._add_new_status(status='Scylla installed')
-                LOGGER.info(msg=f'Installation on {self._host} succeeded!')
+            self._install_on_debian()
 
     def _install_on_ubuntu(self):
         if '16.04' in self._os_version:
@@ -158,8 +168,8 @@ class ScyllaInstaller:
             self._execute_shell_command(command_to_execute=shell_command)
         shell_command = 'apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 5e08fbd8b5d6ec9c'
         self._execute_shell_command(command_to_execute=shell_command)
-        shell_command = f'curl -L --output /etc/apt/sources.list.d/scylla.list \
-                         http://downloads.scylladb.com/deb/ubuntu/scylla-{self._db_version}-$(lsb_release -s -c).list'
+        shell_command = ('curl -L --output /etc/apt/sources.list.d/scylla.list http://'
+                         f'downloads.scylladb.com/deb/ubuntu/scylla-{self._db_version}-$(lsb_release -s -c).list')
         self._execute_shell_command(command_to_execute=shell_command)
         shell_command = 'apt-get update'
         self._execute_shell_command(command_to_execute=shell_command)
@@ -172,12 +182,12 @@ class ScyllaInstaller:
             self._execute_shell_command(command_to_execute=shell_command)
 
     def _install_on_centos(self):
-        shell_command = 'apt-get install -y apt-transport-https'
+        shell_command = 'yum remove -y abrt'
         self._execute_shell_command(command_to_execute=shell_command)
         shell_command = 'yum install -y epel-release'
         self._execute_shell_command(command_to_execute=shell_command)
-        shell_command = f'curl -o /etc/yum.repos.d/scylla.repo -L http://repositories.scylladb.com/scylla/repo/\
-                         a3df46bd-e48a-4a51-bef7-ccbdc819a9c5/centos/scylladb-{self._db_version}.repo'
+        shell_command = ('curl -o /etc/yum.repos.d/scylla.repo -L http://repositories.scylladb.com/scylla/repo/'
+                         f'a3df46bd-e48a-4a51-bef7-ccbdc819a9c5/centos/scylladb-{self._db_version}.repo')
         self._execute_shell_command(command_to_execute=shell_command)
         shell_command = 'yum install -y scylla'
         self._execute_shell_command(command_to_execute=shell_command)
@@ -188,12 +198,12 @@ class ScyllaInstaller:
             self._execute_shell_command(command_to_execute=shell_command)
             shell_command = 'apt-get install -y apt-transport-https dirmngr'
             self._execute_shell_command(command_to_execute=shell_command)
-            shell_command = f'curl -L --output /etc/apt/sources.list.d/scylla.list http://repositories.scylladb.com/\
-                             scylla/repo/deb/debian/scylladb-{self._db_version}-$(lsb_release -s -c).list'
+            shell_command = ('curl -L --output /etc/apt/sources.list.d/scylla.list http://repositories.scylladb.com/'
+                             f'scylla/repo/deb/debian/scylladb-{self._db_version}-$(lsb_release -s -c).list')
             self._execute_shell_command(command_to_execute=shell_command)
         else:
-            shell_command = f'curl -L --output /etc/apt/sources.list.d/scylla.list http://downloads.scylladb.com/deb/\
-                             debian/scylla-{self._db_version}-$(lsb_release -c -s).list'
+            shell_command = ('curl -L --output /etc/apt/sources.list.d/scylla.list http://downloads.scylladb.com/deb/'
+                             f'debian/scylla-{self._db_version}-$(lsb_release -c -s).list')
             self._execute_shell_command(command_to_execute=shell_command)
         shell_command = 'apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 5e08fbd8b5d6ec9c'
         self._execute_shell_command(command_to_execute=shell_command)
@@ -201,6 +211,46 @@ class ScyllaInstaller:
         self._execute_shell_command(command_to_execute=shell_command)
         shell_command = 'apt-get install -y scylla'
         self._execute_shell_command(command_to_execute=shell_command)
+
+    def _execute_post_install(self):
+        # scylla.yaml generator
+        scylla_params = {'cluster_name': self._cluster_name,
+                         'seed_node': f'"{self._seed_node}"',
+                         'listen_address': self._host,
+                         'rpc_address': self._host}
+        template = env.get_template('./scylla_yaml/scylla.yaml')
+        scylla_yaml = template.render(scylla_params).replace('"', '\\"')
+        shell_command = f'echo "{scylla_yaml}" > /etc/scylla/scylla.yaml'
+        self._execute_shell_command(command_to_execute=shell_command)
+        self._add_new_status(status=Status.SCYLLA_YAML_CREATED.value)
+        self._installation_logger.info(msg=f'File "scylla.yaml" successfully created on {self._host}.')
+        # getting network interface name
+        shell_command = 'ls /sys/class/net/ | grep -E \'eno|ens|enp|enx|wlo|wls|wnp|wnx\''
+        stdout, stderr, exit_code = self._execute_shell_command(command_to_execute=shell_command)
+        nic_name = stdout[0].strip()
+        self._installation_logger.info(msg=f'Detected network interface: {nic_name}')
+        # run of "scylla_setup"
+        shell_command = f'scylla_setup --no-raid-setup --nic {nic_name} --io-setup 1 --no-rsyslog-setup'
+        self._execute_shell_command(command_to_execute=shell_command)
+        self._add_new_status(status=Status.SCYLLA_CONFIGURED.value)
+        self._installation_logger.info(msg=f'Command "scylla_setup" completed successfully on {self._host}.')
+        # starting up Scylla service
+        shell_command = 'systemctl start scylla-server.service'
+        self._execute_shell_command(command_to_execute=shell_command)
+        self._add_new_status(status=Status.SCYLLA_STARTED.value)
+        self._installation_logger.info(msg=f'Scylla service started successfully on {self._host}.')
+        # nodetool status check
+        sleep(60)
+        shell_command = 'nodetool status'
+        stdout, stderr, exit_code = self._execute_shell_command(command_to_execute=shell_command)
+        nodetool_status = '\n'.join(stdout)
+        self._installation_logger.debug(msg=f'Result of "nodetool status":\n{nodetool_status}')
+        # run of "cassandra-stress"
+        shell_command = f'cassandra-stress write -mode cql3 native -node {self._host} &> ~/cassandra-stress.log || echo'
+        self._execute_shell_command(command_to_execute=shell_command)
+        self._add_new_status(status=Status.SCYLLA_STRESSED.value)
+        self._installation_logger.info(msg='Command "cassandra-stress" completed. '
+                                           'Check result in ~/cassandra-stress.log.')
 
     def _add_new_status(self, status):
         self._installer_db.insert_data(table='statuses', columns=('status_name', 'installation_id'),
@@ -213,9 +263,10 @@ class ScyllaInstaller:
                 error_msg = '\n'.join(stderr)
             else:
                 error_msg = '\n'.join(stdout)
-            LOGGER.error(msg=f'Execution of command "{command_to_execute}" failed! Error message:\n{error_msg}')
+            self._installation_logger.error(msg=(f'Execution of command "{command_to_execute}" failed! '
+                                                 f'Error message:\n{error_msg}'))
             raise CommandExecutionError(f'Execution of command "{command_to_execute}" failed!')
-        LOGGER.info(msg=f'Execution of command "{command_to_execute}" succeeded!')
+        self._installation_logger.debug(msg=f'Execution of command "{command_to_execute}" succeeded!')
         return stdout, stderr, exit_code
 
     def _set_global_status(self, global_status_value):
@@ -229,47 +280,52 @@ class ScyllaInstaller:
                                        **value_to_update)
 
 
-def setup_logging():
-    config = ConfigParser()
-    config_path = './config/installer.conf'
-    if not path.exists(config_path):
-        raise ConfigFileNotFound(f"File '{config_path}' not found!")
-    config.read(config_path)
-    log_root_dir = config['log']['log_root_dir'].replace('"', '')
-    log_level = config['log']['log_level'].replace('"', '').upper()
-    if log_level == 'DEBUG':
-        log_level = logging.DEBUG
-    elif log_level == 'INFO':
-        log_level = logging.INFO
-    elif log_level == 'WARNING':
-        log_level = logging.WARNING
-    elif log_level == 'ERROR':
-        log_level = logging.ERROR
-    elif log_level == 'CRITICAL':
-        log_level = logging.CRITICAL
-    else:
-        raise LogLevelError(f"Log level {log_level} hasn't been recognized")
-    file_handler = logging.FileHandler(f'{log_root_dir}/installer_{datetime.now()}.log')
-    formatter = logging.Formatter("[%(asctime)s] - %(levelname)s - <%(module)s>: %(message)s")
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(log_level)
+def setup_logging(log_root_dir, log_level):
+    level_to_set = getattr(logging, log_level.upper(), None)
+    file_handler = logging.FileHandler(f"{log_root_dir}/installer_{datetime.now().strftime('%d%m%Y_%H%M%S')}.log")
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    root_formatter = logging.Formatter("[%(asctime)s] -%(module)s - %(levelname)s: %(message)s")
+    installer_formatter = logging.Formatter("[%(asctime)s] - %(levelname)s: %(message)s")
+    file_handler.setFormatter(installer_formatter)
+    file_handler.setLevel(level_to_set)
+    stdout_handler.setFormatter(root_formatter)
+    stdout_handler.setLevel(level_to_set)
     root_logger = logging.getLogger()
-    root_logger.addHandler(file_handler)
-    root_logger.setLevel(log_level)
+    root_logger.addHandler(stdout_handler)
+    root_logger.setLevel(level_to_set)
+    installer_logger = logging.getLogger('installer')
+    installer_logger.addHandler(file_handler)
+    installer_logger.setLevel(level_to_set)
+    return installer_logger
 
 
 if __name__ == '__main__':
     database = ControllerDataBase().instance
-    installation_list = []
-    query_data = {'columns': 'nodes.host, nodes.port, nodes.username, nodes.password, nodes.db_version, \
-                   nodes.cluster_name, nodes.seed_node, nodes.os_version, installations.id as installation_id',
-                  'join_installations': 'yes', 'join_statuses': 'no',
-                  'filter': f'installations.global_status = \'{InstallationState.NEW.value}\''}
-    nodes_list = database.select_data(query_params=query_data, columns=('host', 'port', 'username', 'password',
-                                                                        'db_version', 'cluster_name', 'seed_node',
-                                                                        'os_version', 'installation_id'))
-    if nodes_list:
-        for node in nodes_list:
-            installation_list.append(ScyllaInstaller(installer_db=database, **node))
-        for inst in installation_list:
-            inst.install()
+    config = ConfigObject(config_path='./config/installer.conf')
+    log_configuration = config.log_config
+    main_log = setup_logging(**log_configuration)
+    while True:
+        installation_list = []
+        function_list = {}
+        main_log.debug(msg='Looking for new installations...')
+        query_data = {'columns': 'nodes.host, nodes.port, nodes.username, nodes.password, nodes.db_version, \
+                       nodes.cluster_name, nodes.seed_node, nodes.os_version, installations.id as installation_id',
+                      'join_installations': 'yes', 'join_statuses': 'no',
+                      'filter': f'installations.global_status = \'{InstallationState.NEW.value}\''}
+        nodes_list = database.select_data(query_params=query_data, columns=('host', 'port', 'username', 'password',
+                                                                            'db_version', 'cluster_name', 'seed_node',
+                                                                            'os_version', 'installation_id'))
+        main_log.debug(msg=f'Number of found installations: {len(nodes_list)}')
+        if nodes_list:
+            for node in nodes_list:
+                installation_list.append(ScyllaInstaller(installer_db=database, log_config=log_configuration, **node))
+            main_log.info(msg=f"Number of nodes to install: {len(installation_list)}")
+            parallel_object = ParallelObject()
+            for installation in installation_list:
+                function_list[installation.host] = installation.install
+            main_log.debug(msg=f"Parallel threads will be created for nodes: {', '.join(function_list.keys())}")
+            try:
+                parallel_object.run(functions=function_list)
+            except Exception as ex:
+                main_log.error(msg=f'Error in parallel execution: {ex}')
+        sleep(5)

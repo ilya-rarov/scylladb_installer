@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 
 import cherrypy
-from os import path
 from db_interface.sql_database_interface import MySQLDatabase
 from base64 import b64encode
-from configparser import ConfigParser
-from enum import Enum
+from enum import Enum, unique
+from config import ConfigObject
 
 
+@unique
 class InstallationState(Enum):
     NEW = 'new'
     IN_PROGRESS = 'in progress'
     FAILED = 'failed'
     SUCCEEDED = 'succeeded'
-
-
-class ConfigFileNotFound(Exception):
-    pass
 
 
 class UnknownDataBaseType(Exception):
@@ -25,20 +21,17 @@ class UnknownDataBaseType(Exception):
 
 class ControllerDataBase:
     def __init__(self):
-        config = ConfigParser()
-        config_path = './config/installer.conf'
-        if not path.exists(config_path):
-            raise ConfigFileNotFound(f"File '{config_path}' not found!")
-        config.read(config_path)
-        if config['db']['type'].replace('"', '') == 'mysql':
-            self._instance = MySQLDatabase(user=config['db']['user'].replace('"', ''),
-                                           password=config['db']['password'].replace('"', ''),
-                                           database=config['db']['database'].replace('"', ''),
-                                           host=config['db']['host'].replace('"', ''),
-                                           port=config['db']['port'],
-                                           db_type=config['db']['type'].replace('"', ''))
+        config = ConfigObject(config_path='./config/installer.conf')
+        database_config = config.db_config
+        if database_config['type'] == 'mysql':
+            self._instance = MySQLDatabase(user=database_config['user'],
+                                           password=database_config['password'],
+                                           database=database_config['database'],
+                                           host=database_config['host'],
+                                           port=database_config['port'],
+                                           db_type=database_config['type'])
         else:
-            raise UnknownDataBaseType(f"{config['db']['type']} is unknown type of database")
+            raise UnknownDataBaseType(f"{database_config['type']} is unknown type of database")
 
     @property
     def instance(self):
