@@ -2,7 +2,6 @@
 
 from controller import ControllerDataBase, InstallationState
 from concurrent.futures.thread import ThreadPoolExecutor
-from concurrent.futures import TimeoutError
 from enum import Enum, unique
 import sys
 from time import sleep
@@ -51,17 +50,11 @@ class SupportedDistributions(Enum):
 
 
 class ParallelObject:
-    def __init__(self, timeout=1800):
-        self._timeout = timeout
+    def __init__(self):
         self._parallel_logger = logging.getLogger('installer.parallel_object')
-
-    @property
-    def timeout(self):
-        return self._timeout
 
     def run(self, functions):
         futures = {}
-        results = []
         with ThreadPoolExecutor(max_workers=len(functions)) as executor:
             for host, fn in functions.items():
                 future = executor.submit(fn)
@@ -69,15 +62,10 @@ class ParallelObject:
             for host, future in futures.items():
                 self._parallel_logger.info(msg=f"Starting installation thread for host {host}")
                 try:
-                    results.append(future.result(timeout=self.timeout))
-                except TimeoutError:
-                    self._parallel_logger.error(msg=f'Error: timeout of {self.timeout} seconds exceeded in thread '
-                                                    f'for host {host}!')
-                    raise
+                    future.result()
                 except Exception as e:
                     self._parallel_logger.error(msg=f'Error in thread for host {host}: {e}')
                     raise
-        return results
 
 
 class ScyllaInstaller:
@@ -193,9 +181,11 @@ class ScyllaInstaller:
         self._execute_shell_command(command_to_execute=shell_command)
 
     def _install_on_debian(self):
+        shell_command = 'apt-get update'
+        self._execute_shell_command(command_to_execute=shell_command)
+        shell_command = 'apt-get install -y curl'
+        self._execute_shell_command(command_to_execute=shell_command)
         if '9' in self._os_version:
-            shell_command = 'apt-get update'
-            self._execute_shell_command(command_to_execute=shell_command)
             shell_command = 'apt-get install -y apt-transport-https dirmngr'
             self._execute_shell_command(command_to_execute=shell_command)
             shell_command = ('curl -L --output /etc/apt/sources.list.d/scylla.list http://repositories.scylladb.com/'
@@ -220,10 +210,18 @@ class ScyllaInstaller:
                          'rpc_address': self._host}
         template = env.get_template('./scylla_yaml/scylla.yaml')
         scylla_yaml = template.render(scylla_params).replace('"', '\\"')
+        shell_command = 'chmod o+w /etc/scylla/scylla.yaml'
+        self._execute_shell_command(command_to_execute=shell_command)
+        self._installation_logger.debug(msg='Granted write permission on "scylla.yaml" to other users '
+                                            f'on {self._host}.')
         shell_command = f'echo "{scylla_yaml}" > /etc/scylla/scylla.yaml'
         self._execute_shell_command(command_to_execute=shell_command)
         self._add_new_status(status=Status.SCYLLA_YAML_CREATED.value)
         self._installation_logger.info(msg=f'File "scylla.yaml" successfully created on {self._host}.')
+        shell_command = 'chmod o-w /etc/scylla/scylla.yaml'
+        self._execute_shell_command(command_to_execute=shell_command)
+        self._installation_logger.debug(msg='Revoked write permission on "scylla.yaml" from other users '
+                                            f'on {self._host}.')
         # getting network interface name
         shell_command = 'ls /sys/class/net/ | grep -E \'eno|ens|enp|enx|wlo|wls|wnp|wnx\''
         stdout, stderr, exit_code = self._execute_shell_command(command_to_execute=shell_command)
