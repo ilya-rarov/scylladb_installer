@@ -50,21 +50,23 @@ class SupportedDistributions(Enum):
 
 
 class ParallelObject:
-    def __init__(self):
-        self._parallel_logger = logging.getLogger('installer.parallel_object')
+    def __init__(self, timeout=1800):
+        self._timeout = timeout
+
+    @property
+    def timeout(self):
+        return self._timeout
 
     def run(self, functions):
-        futures = {}
+        futures = []
         with ThreadPoolExecutor(max_workers=len(functions)) as executor:
-            for host, fn in functions.items():
+            for fn in functions:
                 future = executor.submit(fn)
-                futures[host] = future
-            for host, future in futures.items():
-                self._parallel_logger.info(msg=f"Starting installation thread for host {host}")
+                futures.append(future)
+            for future in futures:
                 try:
-                    future.result()
-                except Exception as e:
-                    self._parallel_logger.error(msg=f'Error in thread for host {host}: {e}')
+                    future.result(timeout=self.timeout)
+                except Exception:
                     raise
 
 
@@ -183,7 +185,7 @@ class ScyllaInstaller:
     def _install_on_debian(self):
         shell_command = 'apt-get update'
         self._execute_shell_command(command_to_execute=shell_command)
-        shell_command = 'apt-get install -y curl'
+        shell_command = 'apt-get install -y curl gnupg'
         self._execute_shell_command(command_to_execute=shell_command)
         if '9' in self._os_version:
             shell_command = 'apt-get install -y apt-transport-https dirmngr'
@@ -233,12 +235,14 @@ class ScyllaInstaller:
         self._add_new_status(status=Status.SCYLLA_CONFIGURED.value)
         self._installation_logger.info(msg=f'Command "scylla_setup" completed successfully on {self._host}.')
         # starting up Scylla service
+        if self._host != self._seed_node:
+            sleep(120)
         shell_command = 'systemctl start scylla-server.service'
         self._execute_shell_command(command_to_execute=shell_command)
         self._add_new_status(status=Status.SCYLLA_STARTED.value)
         self._installation_logger.info(msg=f'Scylla service started successfully on {self._host}.')
         # nodetool status check
-        sleep(60)
+        sleep(120)
         shell_command = 'nodetool status'
         stdout, stderr, exit_code = self._execute_shell_command(command_to_execute=shell_command)
         nodetool_status = '\n'.join(stdout)
@@ -282,7 +286,7 @@ def setup_logging(log_root_dir, log_level):
     level_to_set = getattr(logging, log_level.upper(), None)
     file_handler = logging.FileHandler(f"{log_root_dir}/installer_{datetime.now().strftime('%d%m%Y_%H%M%S')}.log")
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
-    root_formatter = logging.Formatter("[%(asctime)s] -%(module)s - %(levelname)s: %(message)s")
+    root_formatter = logging.Formatter("[%(asctime)s] - %(module)s - %(levelname)s: %(message)s")
     installer_formatter = logging.Formatter("[%(asctime)s] - %(levelname)s: %(message)s")
     file_handler.setFormatter(installer_formatter)
     file_handler.setLevel(level_to_set)
@@ -304,7 +308,8 @@ if __name__ == '__main__':
     main_log = setup_logging(**log_configuration)
     while True:
         installation_list = []
-        function_list = {}
+        functions_list = []
+        hosts_list = []
         main_log.debug(msg='Looking for new installations...')
         query_data = {'columns': 'nodes.host, nodes.port, nodes.username, nodes.password, nodes.db_version, \
                        nodes.cluster_name, nodes.seed_node, nodes.os_version, installations.id as installation_id',
@@ -320,10 +325,11 @@ if __name__ == '__main__':
             main_log.info(msg=f"Number of nodes to install: {len(installation_list)}")
             parallel_object = ParallelObject()
             for installation in installation_list:
-                function_list[installation.host] = installation.install
-            main_log.debug(msg=f"Parallel threads will be created for nodes: {', '.join(function_list.keys())}")
+                functions_list.append(installation.install)
+                hosts_list.append(installation.host)
+            main_log.info(msg=f"Parallel installation threads will be created for nodes: {', '.join(hosts_list)}")
             try:
-                parallel_object.run(functions=function_list)
+                parallel_object.run(functions=functions_list)
             except Exception as ex:
                 main_log.error(msg=f'Error in parallel execution: {ex}')
         sleep(5)
