@@ -1,25 +1,87 @@
 body {
     font-family: Calibri, sans-serif;
-    color: #808080
+    color: #808080;
+	background-color: floralwhite;
+	margin: 0;
+	padding: 0;
+	height: 100%
 }
-.node_container {
+#menu {
+	width: 100px;
+	background: #57d1e5;
+	height: 100%;
+	position: fixed;
+	top: 0;
+    left: 0;
+	overflow-x: hidden;
+}
+#menu a {
+    padding: 20px 0 20px 15px;
+    text-decoration: none;
+    font-size: 20px;
+	font-weight: bold;
+    color: white;
+    display: block;
+}
+#menu a:hover {
+    background-color: #4ab1c2;
+}
+#content {
+	width: 50%;
+	margin-left: 200px
+}
+img {
+	width: 1.3em;
+}
+#scyllaLogo {
+    width: 100%;
+    margin: 10px 0 20px 0;
+}
+.nodeContainer {
     border: solid #57d1e5;
     border-radius: 0.8em;
     margin: 0.7em 0;
-    padding: 0.3em
+	box-shadow: 2px 2px 2px #808080;
 }
 input, label {
-    display:block;
+    display: block;
 }
 label {
-    margin-top: 0.7em
+    margin-top: 0.7em;
+    font-weight: bold
 }
-.host_params, .user_data, .scylla_version, .remove {
+input, select {
+    border: solid #808080 0.1em;
+    border-radius: 0.4em;
+	width: 15em
+}
+.checkBox {
+    width: 1em
+}
+.emptyInput {
+    border: solid #c63838 0.2em;
+}
+.nodeName {
+    background-color: #57d1e5;
+    width: 70px;
+    border: solid #57d1e5;
+    border-radius: 0.5em;
+	color: white;
+	font-weight: bold;
+	text-align: center;
+	box-shadow: 2px 2px 2px #808080;
+	float: left;
+}
+.nodeHeader {
+	clear: both
+}
+.hostParams, .userData, .scyllaVersion, .clusterName, .seedNode {
     float: left;
     margin: 0.7em 0.7em;
 }
-.seed_node {
-    margin-bottom: 0.7em
+.clusterName {
+	float: left;
+    margin: 0.7em 0.7em 0.7em 0;
 }
 .clearfix::before, .clearfix::after{
     content: "";
@@ -30,4 +92,123 @@ label {
 }
 form {
     display: none
+}
+button {
+	color: white;
+	font-weight: bold;
+	border: none;
+	line-height: 1em;
+	box-shadow: 2px 2px 2px #808080;
+}
+button:hover {
+	box-shadow: 2px 2px 2px #4e4e4e;
+	cursor: pointer	
+}
+button[name="install"] {
+	background-color: #33a64c;
+	text-transform: uppercase;
+	border-radius: 0.3em;
+	font-size: 1.2em;
+	padding: 0.5em 1.2em;
+	margin: 1.2em 1.2em 1.2em 0
+}
+button[name="install"]:hover {
+	background-color: #2e8441;
+}
+button[name="progress"] {
+	background-color: #1176eb;
+	border-radius: 0.3em;
+	font-size: 1.2em;
+	padding: 0.5em 1.2em;
+	margin: 1.2em
+}
+button[name="progress"]:hover {
+	background-color: #0f60be;
+}
+button[name="addNode"] {
+	background-color: #57d1e5;
+	border-radius: 0.5em;
+	padding: 0.7em 1.5em;
+}
+button[name="addNode"]:hover {
+	background-color: #4ab1c2;
+}
+button[name="removeNode"] {
+	background-color: rgb(227, 89, 78);
+	border-radius: 0.7em;
+	padding: 0.4em 1em;
+	float: right
+}
+button[name="closeModal"] {
+	background-color: rgb(227, 89, 78);
+	border-radius: 0.7em;
+	padding: 0.7em 1.5em;
+}
+button[name="closeModal"]:hover {
+	background-color: #bc2f24;
+}
+button[name="removeNode"]:hover {
+	background-color: #bc2f24;
+}
+hr {
+	border-top: 2px solid #808080;
+	border-radius: 5em
+}
+#modalWindow {
+    background-color: floralwhite;
+	box-shadow: 5px 5px 15px #656565;
+	padding: 20px;
+	text-align: center;
+	margin: 150px auto;
+	width: 60%
+}
+#modalWindowBackground {
+	display: none;
+	position: fixed;
+	top: 0;
+	left: 0;            
+	z-index: 1;
+	height: 100%;
+	width: 100%;
+	background-color: rgba(0,0,0,0.4)
+}
+table {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
+}
+thead th:nth-child(1) {
+    width: 26%;
+}
+thead th:nth-child(2) {
+    width: 10%;
+}
+
+thead th:nth-child(3) {
+    width: 10%;
+}
+thead th:nth-child(4) {
+    width: 10%;
+}
+thead th:nth-child(5) {
+    width: 10%;
+}
+thead th:nth-child(6) {
+    width: 10%;
+}
+thead th:nth-child(7) {
+    width: 12%;
+}
+thead th:nth-child(8) {
+    width: 12%;
+}
+th, td {
+    padding-top: 0.5em;
+    padding-bottom: 0.5em
+}
+th {
+    font-size: 1.1em
+}
+tr {
+    border-bottom: 3px solid #57d1e5;
 }

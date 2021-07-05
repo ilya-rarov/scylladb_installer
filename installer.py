@@ -248,7 +248,8 @@ class ScyllaInstaller:
         nodetool_status = '\n'.join(stdout)
         self._installation_logger.debug(msg=f'Result of "nodetool status":\n{nodetool_status}')
         # run of "cassandra-stress"
-        shell_command = f'cassandra-stress write -mode cql3 native -node {self._host} &> ~/cassandra-stress.log || echo'
+        shell_command = f"cassandra-stress write -mode cql3 native -node {self._host} -rate 'threads=2 " \
+                        f"throttle=500/s' -pop seq=1..10000 &> ~/cassandra-stress.log || true"
         self._execute_shell_command(command_to_execute=shell_command)
         self._add_new_status(status=Status.SCYLLA_STRESSED.value)
         self._installation_logger.info(msg='Command "cassandra-stress" completed. '
@@ -284,7 +285,7 @@ class ScyllaInstaller:
 
 def setup_logging(log_root_dir, log_level):
     level_to_set = getattr(logging, log_level.upper(), None)
-    file_handler = logging.FileHandler(f"{log_root_dir}/installer_{datetime.now().strftime('%d%m%Y_%H%M%S')}.log")
+    file_handler = logging.FileHandler(f"{log_root_dir}/installer.log")
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
     root_formatter = logging.Formatter("[%(asctime)s] - %(module)s - %(levelname)s: %(message)s")
     installer_formatter = logging.Formatter("[%(asctime)s] - %(levelname)s: %(message)s")
@@ -332,4 +333,4 @@ if __name__ == '__main__':
                 parallel_object.run(functions=functions_list)
             except Exception as ex:
                 main_log.error(msg=f'Error in parallel execution: {ex}')
-        sleep(5)
+        sleep(3)

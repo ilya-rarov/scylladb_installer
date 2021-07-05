@@ -6,48 +6,86 @@
     <link rel="stylesheet" href="static/css/installer_style.css">
 </head>
 <body>
-    <h2>Setup and install ScyllaDB cluster</h2>
-    <label><b>Cluster name</b>
-        <input type="text" name="cluster_name" placeholder="Enter cluster name">
-    </label>
-    <form name="node">
-        <div class="node_container clearfix">
-            <div class="node_name"><b>Node000</b></div>
-            <div class="host_params">
-                <label>Hostname or IP address
-                    <input type="text" name="host" placeholder="Enter host" required>
-                </label>
-                
-                <label>SSH port
-                    <input type="text" name="port" placeholder="Enter port" required>
-                </label>         
+   <div id="menu">
+       <div id="logo">
+           <img id="scyllaLogo" src="static/img/logo-scylla-vertical.png" alt="Scylla DB">
+       </div>
+          <a href="installer.html">Installer</a>
+          <a href="#">Statistics</a>
+   </div>
+   <div id="content"> 
+        <h2>Setup and install ScyllaDB cluster</h2>
+        <form name="node">
+            <div class="nodeContainer clearfix">
+                <div class="nodeHeader">
+                    <div class="nodeName">Node00</div>
+                </div>
+                <div class="hostParams">
+                    <label>Hostname or IP address
+                        <input type="text" name="host" placeholder="Enter host" onclick="regularInput()" onfocus="regularInput()" required>
+                    </label>
+                    
+                    <label>SSH port
+                        <input type="text" name="port" placeholder="Enter port" onclick="regularInput()" onfocus="regularInput()" required>
+                    </label>         
+                </div>
+                <div class="userData">
+                    <label>Username
+                        <input type="text" name="username" placeholder="Enter sudo user or root" onclick="regularInput()" onfocus="regularInput()" required>
+                    </label>      
+                    <label>Password
+                        <input type="password" name="password" placeholder="Enter password">
+                    </label> 
+                </div>
+                <div class="scyllaVersion">
+                    <label>Scylla version</label>
+                    <select name="db_version">
+                           <option value="4.4" selected>4.4</option>
+                           <option value="4.3">4.3</option>
+                    </select>
+                    <label>Force install</label>
+                    <input type="checkbox" name="force_install" class="checkBox" onchange="forceInstallStatusChange()">
+                </div>
             </div>
-            <div class="user_data">
-                <label>Username
-                    <input type="text" name="username" placeholder="Enter sudo user or root" required>
-                </label>      
-                <label>Password
-                    <input type="password" name="password" placeholder="Enter password">
-                </label>
-                
+        </form>
+        <button name="addNode" onclick="addNode()">Add node</button>
+        <hr>
+        <div class="clearfix">
+            <div class="clusterName">
+                <label>Cluster name</label> 
+                    <input type="text" name="cluster_name" placeholder="Enter cluster name" onclick="regularInput()" onfocus="regularInput()" required>
             </div>
-            <div class="scylla_version">
-                <label>Scylla version</label>
-                <select name="db_version">
-                       <option value="4.4" selected>4.4</option>
-                       <option value="4.3">4.3</option>
-                </select>
+            <div class="seedNode">
+                <label>Seed node</label>
+                <select name="seed_node_select"></select>
             </div>
         </div>
-    </form>
-    <button name="addNode" onclick="addNode()">Add node</button>
-    <hr>
-    <div class="seed_node">
-        <label>Seed node</label>
-            <select name="seed_node_select">
-            </select>        
+        <button name="install" onclick="submitForm()">Install</button>
+        <button name="progress" onclick="openModalWindow()">Show progress</button>
+   </div>
+       <div id="modalWindowBackground">
+        <div id="modalWindow">
+           <h2>ScyllaDB installation progress</h2>
+           <table>
+             <thead>
+              <tr>
+                <th>Host</th>
+                <th>OS version</th>
+                <th>Scylla binaries</th>
+                <th>Scylla.yaml</th>
+                <th>Scylla setup</th>
+                <th>Scylla startup</th>
+                <th>Cassandra-stress</th>
+                <th>Installation status</th>
+              </tr>
+             </thead>
+             <tbody>  
+             </tbody>
+           </table>
+           <p id=statusMessage>Looking for active installations...</p>
+           <button name="closeModal" onclick="closeModalWindow()">Close</button>
+        </div>
     </div>
-    <button name="install" onclick="sendFormData()">Install</button>
-    <script src="static/js/installer.js"></script>
+   <script src="static/js/installer.js"></script>
 </body>
 </html>

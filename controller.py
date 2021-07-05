@@ -5,6 +5,7 @@ from db_interface.sql_database_interface import MySQLDatabase
 from base64 import b64encode
 from enum import Enum, unique
 from config import ConfigObject
+from time import sleep
 
 
 @unique
@@ -51,10 +52,26 @@ class Controller(object):
         return open('installer.html')
 
     @cherrypy.expose
+    @cherrypy.tools.json_in()
+    @cherrypy.tools.json_out()
     def status(self):
-        pass
-        # should return the state of the installation from the DB table
-        return
+        data = cherrypy.request.json
+        host = data.get('host')
+        response = {}
+        if host:
+            sleep(1)
+            query_data = {'columns': 'nodes.host, installations.global_status, statuses.status_name',
+                          'join_installations': 'yes', 'join_statuses': 'yes', 'filter': f'nodes.host = \'{host}\''}
+            available_statuses = self.database.select_data(query_params=query_data, columns=('host', 'global_status',
+                                                                                             'status_name'))
+            response['message'] = available_statuses
+        else:
+            sleep(3)
+            query_data = {'columns': 'nodes.host', 'join_installations': 'yes', 'join_statuses': 'no',
+                          'filter': f'installations.global_status = \'{InstallationState.IN_PROGRESS.value}\''}
+            active_hosts = self.database.select_data(query_params=query_data, columns=('host',))
+            response['message'] = active_hosts
+        return response
 
     @cherrypy.expose
     @cherrypy.tools.json_in()
@@ -64,17 +81,24 @@ class Controller(object):
                       'filter': f'installations.global_status in (\'{InstallationState.NEW.value}\', \
                       \'{InstallationState.IN_PROGRESS.value}\')'}
         active_hosts = self.database.select_data(query_params=query_data, columns=('host',))
-        print(active_hosts)
-        columns_to_insert = tuple(data['nodes'][0].keys())
         new_nodes = ''
         new_installations = ''
         nodes_to_install = []
         for node in data['nodes']:
             active_node = False
             for host in active_hosts:
-                if node['host'] == host['host']:
+                if node['host'] == host['host'] and not node.get('force_install'):
                     active_node = True
             if not active_node:
+                if node.get('force_install'):
+                    values_to_update = {'global_status': InstallationState.FAILED.value,
+                                        'finish_timestamp': 'get_system_timestamp'}
+                    self.database.update_data(table='installations',
+                                              condition=f'host = \'{node["host"]}\' and global_status in '
+                                                        f'(\'{InstallationState.NEW.value}\','
+                                                        f'\'{InstallationState.IN_PROGRESS.value}\')',
+                                              **values_to_update)
+                node.pop('force_install', None)
                 nodes_to_install.append(node)
         for node in nodes_to_install:
             if node['password'] != 'null':
@@ -90,6 +114,7 @@ class Controller(object):
                 new_nodes += f'{tuple(node.values())},'
                 new_installations += f'(\'new\', \'{node["host"]}\'),'
         if new_nodes != '':
+            columns_to_insert = tuple(nodes_to_install[0].keys())
             self.database.insert_data(table='nodes', columns=columns_to_insert, values=new_nodes[:-1])
         if new_installations != '':
             columns_to_insert = ('global_status', 'host')
