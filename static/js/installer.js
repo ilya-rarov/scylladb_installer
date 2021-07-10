@@ -1,3 +1,5 @@
+document.addEventListener("DOMContentLoaded", createForm);
+
 function createForm() {
     let nodeNumber = window.nodeNumber;
     
@@ -8,6 +10,9 @@ function createForm() {
     let lastForm = document.forms[document.forms.length - 1];
     
     let newForm = initForm.cloneNode(true);
+    if (initForm.style.display != 'none') {
+        initForm.style.display = 'none'
+    }
     newForm.style.display = 'block';
     
     lastForm.after(newForm);
@@ -31,17 +36,15 @@ function createForm() {
     return newForm;
 }
 
-document.addEventListener("DOMContentLoaded", createForm);
-
 function addNode() {
     let newForm = createForm();
 
-	let removeButton = document.createElement('button');
-	removeButton.innerText = 'X';
-	removeButton.name = 'removeNode'
+    let removeButton = document.createElement('button');
+    removeButton.innerText = 'X';
+    removeButton.name = 'removeNode'
     removeButton.addEventListener('click', removeNode);
     
-	let newNodeHeader = newForm.querySelector('.nodeHeader')
+    let newNodeHeader = newForm.querySelector('.nodeHeader')
     newNodeHeader.appendChild(removeButton);
 }
 
@@ -116,7 +119,6 @@ async function sendFormData() {
         arrayOfForms.push(formDataObj)
     }
     objectToJSON['nodes'] = arrayOfForms
-    console.log(objectToJSON)
     let response = await fetch('/install', {
         method: 'POST',
         headers: {
@@ -137,45 +139,45 @@ function forceInstallStatusChange(e) {
 }
 
 async function openModalWindow() {
-	modalWindowBackground.style.display = "block";
-	window.controller = new AbortController();
-	messageString = document.querySelector('#statusMessage');
-	let objectToJSON = {"host": ''}
-	let response;
-	try {
-		response = await fetch('/status', {
-			signal: window.controller.signal,
-			method: 'POST',
-			headers: {
-			'Content-Type': 'application/json; charset=utf-8'
-		},
+    modalWindowBackground.style.display = "block";
+    window.controller = new AbortController();
+    messageString = document.querySelector('#statusMessage');
+    let objectToJSON = {"host": ''}
+    let response;
+    try {
+        response = await fetch('/status', {
+            signal: window.controller.signal,
+            method: 'POST',
+            headers: {
+            'Content-Type': 'application/json; charset=utf-8'
+        },
         body: JSON.stringify(objectToJSON)
-		});
-	}
-	catch(err) {
-		return
-	}
-	if (response.ok) {
-		let json = await response.json();
-		if (json['message'] == '') {
-			messageString.innerText = 'No active installations found';
+        });
+    }
+    catch(err) {
+        return
+    }
+    if (response.ok) {
+        let json = await response.json();
+        if (json['message'] == '') {
+            messageString.innerText = 'No active installations found';
         }
-		else {
-			messageString.innerText = ''
+        else {
+            messageString.innerText = ''
             for (let item of json['message']) {
                 getProgress(host=item['host'])
             }
         }
     }
-	else {
-		alert("HTTP Error: " + response.status);
-	}
+    else {
+        alert("HTTP Error: " + response.status);
+    }
 }
 
 async function getProgress(host) {
-    let succeededIcon = '<img src="static/img/succeeded.png" alt="Succeeded">'    
-    let inProgressIcon = '<img src="static/img/in_progress.png" alt="In Progress">'    
-    let failedIcon = '<img src="static/img/failed.png" alt="Failed">'
+    let succeededIcon = '<img src="../../static/img/succeeded.png" alt="Succeeded">'
+    let inProgressIcon = '<img src="../../static/img/in_progress.png" alt="In Progress">'
+    let failedIcon = '<img src="../../static/img/failed.png" alt="Failed">'
     
     let tableHead = document.querySelector('thead');
     let tableHeadRow = tableHead.querySelector('tr');
@@ -210,7 +212,6 @@ async function getProgress(host) {
         }
         if (response.ok) {
             let json = await response.json();
-            console.log(json['message'])
             for (let record of json['message']) {
                 switch(record['status_name'].toUpperCase()){
                     case 'OS IDENTIFIED':
@@ -245,10 +246,10 @@ async function getProgress(host) {
 }
 
 function closeModalWindow() {
-	window.controller.abort();
-	modalWindowBackground.style.display = "none";
-	messageString = document.querySelector('#statusMessage');
-	messageString.innerText = 'Looking for active installations...'
+    window.controller.abort();
+    modalWindowBackground.style.display = "none";
+    messageString = document.querySelector('#statusMessage');
+    messageString.innerText = 'Looking for active installations...'
     let tableBody = document.querySelector('tbody');
     while (tableBody.firstChild) {
         tableBody.removeChild(tableBody.firstChild);

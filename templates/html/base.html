@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% block head %}
+    <meta charset="UTF-8">
+    <title>{% block title %}{% endblock %}</title>
+    {% endblock %}
+</head>
+<body>
+   <div id="menu">
+       <div id="logo">
+           <img id="scyllaLogo" src="../../static/img/logo-scylla-vertical.png" alt="Scylla DB">
+       </div>
+          <a href="/index">Installer</a>
+          <a href="/statistics">Statistics</a>
+   </div>
+   <div id="content">
+       {% block content %}{% endblock %}
+   </div>
+{% block script %}{% endblock %}
+</body>
+</html>

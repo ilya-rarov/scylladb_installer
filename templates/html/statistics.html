@@ -1,0 +1,121 @@
+{% extends "html/base.html" %}
+{% block title %}Statistics{% endblock %}
+{% block head %}
+    {{ super() }}
+    <link rel="stylesheet" href="../../static/css/statistics_style.css">
+{% endblock %}
+{% block content %}
+    <h2>Completed installations statistics</h2>
+    <form name="filter" onsubmit="getStatistics();return false">
+       <div class="input">
+          <label for="cluster">Cluster name
+            <select name="cluster" id="cluster">
+                <option value="all" selected>all</option>
+                {% for cluster in options.get('cluster') %}
+                <option value="{{ cluster }}">{{ cluster }}</option>
+                {% endfor %}
+            </select>
+          </label>
+       </div>
+       <div class="input">
+          <label for="host">Host
+            <select name="host" id="host">
+                <option value="all" selected>all</option>
+                {% for host in options.get('host') %}
+                <option value="{{ host }}">{{ host }}</option>
+                {% endfor %}
+            </select>
+          </label>
+       </div>
+       <div class="input">
+          <label for="user">User
+            <select name="user" id="user">
+                <option value="all" selected>all</option>
+                {% for user in options.get('user') %}
+                <option value="{{ user }}">{{ user }}</option>
+                {% endfor %}
+            </select>
+          </label> 
+       </div>
+       <div class="input">
+          <label for="db_version">ScyllaDB version
+            <select name="db_version" id="db_version">
+                <option value="all" selected>all</option>
+                {% for db_version in options.get('db_version') %}
+                <option value="{{ db_version }}">{{ db_version }}</option>
+                {% endfor %}
+            </select>
+          </label>
+       </div>
+       <div class="input">
+          <label for="os_version">OS version
+            <select name="os_version" id="os_version">
+                <option value="all" selected>all</option>
+                {% for os_version in options.get('os_version') %}
+                <option value="{{ os_version }}">{{ os_version }}</option>
+                {% endfor %}
+            </select>
+          </label>
+       </div>
+       <div class="input">
+          <label for="seed_node">Seed node
+            <select name="seed_node" id="seed_node">
+                <option value="all" selected>all</option>
+                {% for seed_node in options.get('seed_node') %}
+                <option value="{{ seed_node }}">{{ seed_node }}</option>
+                {% endfor %}
+            </select>
+          </label>
+       </div>
+       <div class="input">
+          <label for="start_date_from">Start from date
+            <input type="date" name="start_date_from" id="start_date_from" value="{{ options.get('today') }}">
+          </label>
+       </div>
+       <div class="input">
+          <label for="start_time_from">Start from time
+            <input type="time" name="start_time_from" id="start_time_from" step="1" value="00:00:00">
+          </label>
+       </div>
+       <div class="input">
+          <label for="start_date_to">Start to date
+            <input type="date" name="start_date_to" id="start_date_to" value="{{ options.get('today') }}">
+          </label>
+       </div>
+       <div class="input">
+          <label for="start_time_to">Start to time
+            <input type="time" name="start_time_to" id="start_time_to" step="1" value="23:59:59">
+          </label>
+       </div>
+       <div class="input">
+          <label for="status">Status
+            <select name="status" id="status">
+                <option value="all" selected>all</option>
+                {% for status in options.get('status') %}
+                <option value="{{ status }}">{{ status }}</option>
+                {% endfor %}
+            </select>
+          </label>
+        </div>
+        <button>Filter</button>
+        </form>
+        <table>
+            <thead>
+              <tr>
+                <th>Cluster</th>
+                <th>Host</th>
+                <th>User</th>
+                <th>ScyllaDB version</th>
+                <th>OS version</th>
+                <th>Seed node</th>
+                <th>Installation start</th>
+                <th>Installation finish</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+        <p id=statusMessage>Looking for completed installations...</p>
+{% endblock %}
+{% block script %}<script src="../../static/js/statistics.js"></script>{% endblock %}

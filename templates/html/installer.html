@@ -1,19 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Installer</title>
-    <link rel="stylesheet" href="static/css/installer_style.css">
-</head>
-<body>
-   <div id="menu">
-       <div id="logo">
-           <img id="scyllaLogo" src="static/img/logo-scylla-vertical.png" alt="Scylla DB">
-       </div>
-          <a href="installer.html">Installer</a>
-          <a href="#">Statistics</a>
-   </div>
-   <div id="content"> 
+{% extends "html/base.html" %}
+{% block title %}Installer{% endblock %}
+{% block head %}
+    {{ super() }}
+    <link rel="stylesheet" href="../../static/css/installer_style.css">
+{% endblock %}
+{% block content %}
         <h2>Setup and install ScyllaDB cluster</h2>
         <form name="node">
             <div class="nodeContainer clearfix">
@@ -24,18 +15,18 @@
                     <label>Hostname or IP address
                         <input type="text" name="host" placeholder="Enter host" onclick="regularInput()" onfocus="regularInput()" required>
                     </label>
-                    
+
                     <label>SSH port
                         <input type="text" name="port" placeholder="Enter port" onclick="regularInput()" onfocus="regularInput()" required>
-                    </label>         
+                    </label>
                 </div>
                 <div class="userData">
                     <label>Username
                         <input type="text" name="username" placeholder="Enter sudo user or root" onclick="regularInput()" onfocus="regularInput()" required>
-                    </label>      
+                    </label>
                     <label>Password
                         <input type="password" name="password" placeholder="Enter password">
-                    </label> 
+                    </label>
                 </div>
                 <div class="scyllaVersion">
                     <label>Scylla version</label>
@@ -52,7 +43,7 @@
         <hr>
         <div class="clearfix">
             <div class="clusterName">
-                <label>Cluster name</label> 
+                <label>Cluster name</label>
                     <input type="text" name="cluster_name" placeholder="Enter cluster name" onclick="regularInput()" onfocus="regularInput()" required>
             </div>
             <div class="seedNode">
@@ -62,30 +53,28 @@
         </div>
         <button name="install" onclick="submitForm()">Install</button>
         <button name="progress" onclick="openModalWindow()">Show progress</button>
-   </div>
-       <div id="modalWindowBackground">
-        <div id="modalWindow">
-           <h2>ScyllaDB installation progress</h2>
-           <table>
-             <thead>
-              <tr>
-                <th>Host</th>
-                <th>OS version</th>
-                <th>Scylla binaries</th>
-                <th>Scylla.yaml</th>
-                <th>Scylla setup</th>
-                <th>Scylla startup</th>
-                <th>Cassandra-stress</th>
-                <th>Installation status</th>
-              </tr>
-             </thead>
-             <tbody>  
-             </tbody>
-           </table>
-           <p id=statusMessage>Looking for active installations...</p>
-           <button name="closeModal" onclick="closeModalWindow()">Close</button>
+        <div id="modalWindowBackground">
+            <div id="modalWindow">
+            <h2>ScyllaDB installation progress</h2>
+            <table>
+                <thead>
+                  <tr>
+                    <th>Host</th>
+                    <th>OS version</th>
+                    <th>Scylla binaries</th>
+                    <th>Scylla.yaml</th>
+                    <th>Scylla setup</th>
+                    <th>Scylla startup</th>
+                    <th>Cassandra-stress</th>
+                    <th>Installation status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+            <p id=statusMessage>Looking for active installations...</p>
+            <button name="closeModal" onclick="closeModalWindow()">Close</button>
+            </div>
         </div>
-    </div>
-   <script src="static/js/installer.js"></script>
-</body>
-</html>
+{% endblock %}
+{% block script %}<script src="../../static/js/installer.js"></script>{% endblock %}
