@@ -5,8 +5,8 @@ async function getStatistics() {
     while (tableBody.firstChild) {
         tableBody.removeChild(tableBody.firstChild);
     }
-	messageString = document.querySelector('#statusMessage');
-	messageString.innerText = 'Looking for completed installations...'
+    messageString = document.querySelector('#statusMessage');
+    messageString.innerText = 'Looking for completed installations...'
     
     let formData = new FormData(document.querySelector("form[name='filter']"))
     
@@ -23,19 +23,19 @@ async function getStatistics() {
         },
         body: JSON.stringify(formDataObj)
     });
-	if (response.ok) {
-		let json = await response.json();
-		if (json['message'] == '') {
-			messageString.innerText = 'No completed installations found';
+    if (response.ok) {
+        let json = await response.json();
+        if (json['message'] == '') {
+            messageString.innerText = 'No completed installations found';
         }
-		else {
-			messageString.innerText = ''
+        else {
+            messageString.innerText = ''
             generatStatTable(statArray=json['message'])
         }
     }
-	else {
-		alert("HTTP Error: " + response.status);
-	}    
+    else {
+        alert("HTTP Error: " + response.status);
+    }    
 
 }
 
