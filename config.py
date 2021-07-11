@@ -2,15 +2,11 @@ from configparser import ConfigParser
 from os import path
 
 
-class ConfigFileNotFound(Exception):
-    pass
-
-
 class ConfigObject:
     def __init__(self, config_path):
         config = ConfigParser()
         if not path.exists(config_path):
-            raise ConfigFileNotFound(f"File '{config_path}' not found!")
+            raise FileNotFoundError(f"File '{config_path}' not found!")
         config.read(config_path)
         db_params = {}
         log_params = {}

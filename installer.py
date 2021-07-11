@@ -10,6 +10,7 @@ from ssh_interface.ssh import SSHConnection
 import logging
 from config import ConfigObject
 from jinja2 import FileSystemLoader, Environment, select_autoescape
+from os import path
 
 env = Environment(
     loader=FileSystemLoader('templates'),
@@ -83,15 +84,20 @@ class ScyllaInstaller:
         self._os_version = os_version
         self._installation_id = installation_id
         self._ssh_connection = SSHConnection(host=host, port=port, user=username, password=password)
+        self._installation_logger = self._log_setup(log_config=log_config, host=host)
+
+    @staticmethod
+    def _log_setup(log_config, host):
         log_level = getattr(logging, log_config['log_level'].upper(), None)
         file_handler = logging.FileHandler(f"{log_config['log_root_dir']}/{host}_scylla_installation_"
                                            f"{datetime.now().strftime('%d%m%Y_%H%M%S')}.log")
         formatter = logging.Formatter("[%(asctime)s] - %(levelname)s: %(message)s")
         file_handler.setFormatter(formatter)
         file_handler.setLevel(log_level)
-        self._installation_logger = logging.getLogger(f'{host}_scylla_installation')
-        self._installation_logger.addHandler(file_handler)
-        self._installation_logger.setLevel(log_level)
+        installation_logger = logging.getLogger(f'{host}_scylla_installation')
+        installation_logger.addHandler(file_handler)
+        installation_logger.setLevel(log_level)
+        return installation_logger
 
     @property
     def host(self):
@@ -285,6 +291,8 @@ class ScyllaInstaller:
 
 def setup_logging(log_root_dir, log_level):
     level_to_set = getattr(logging, log_level.upper(), None)
+    if not path.exists(log_root_dir):
+        raise FileNotFoundError(f"Log directory '{log_root_dir}' not found!")
     file_handler = logging.FileHandler(f"{log_root_dir}/installer.log")
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
     root_formatter = logging.Formatter("[%(asctime)s] - %(module)s - %(levelname)s: %(message)s")
