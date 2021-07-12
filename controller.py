@@ -2,12 +2,14 @@
 
 import cherrypy
 import datetime
+import logging.config
 from db_interface.sql_database_interface import MySQLDatabase
 from base64 import b64encode
 from enum import Enum, unique
 from config import ConfigObject
 from time import sleep
 from jinja2 import FileSystemLoader, Environment, select_autoescape
+from os import path
 
 env = Environment(
     loader=FileSystemLoader('templates'),
@@ -39,6 +41,7 @@ class ControllerDataBase:
                                            port=database_config['port'],
                                            db_type=database_config['type'])
         else:
+            logger.critical(f"Critical error!\"{database_config['type']}\" is unknown type of database")
             raise UnknownDataBaseType(f"{database_config['type']} is unknown type of database")
 
     @property
@@ -72,6 +75,7 @@ class Controller(object):
                                                         \'{InstallationState.SUCCEEDED.value}\')'}
             query_result = self._database.select_data(query_params=query_data, columns=(f'{key}',))
             option_dictionary[key] = [x.get(key) for x in query_result]
+            logger.debug(msg=f"Found following options for the select \"{key}\": {', '.join(option_dictionary[key])}")
             option_dictionary['today'] = datetime.datetime.now().strftime('%Y-%m-%d')
         return template.render(options=option_dictionary)
 
@@ -111,6 +115,7 @@ class Controller(object):
                                                                                   'db_version', 'os_version',
                                                                                   'seed_node', 'installation_start',
                                                                                   'installation_finish', 'status'))
+        logger.debug(msg=f"Found following statistics records: {', '.join(statistics)}")
         for record in statistics:
             if record['installation_start']:
                 record['installation_start'] = record.get('installation_start').strftime('%d.%m.%Y %H:%M:%S.%f')
@@ -135,12 +140,14 @@ class Controller(object):
                           'join_installations': 'yes', 'join_statuses': 'yes', 'filter': f'nodes.host = \'{host}\''}
             available_statuses = self._database.select_data(query_params=query_data, columns=('host', 'global_status',
                                                                                               'status_name'))
+            logger.debug(msg=f"Found following statuses for active installations: {', '.join(available_statuses)}")
             response['message'] = available_statuses
         else:
             sleep(3)
             query_data = {'columns': 'nodes.host', 'join_installations': 'yes', 'join_statuses': 'no',
                           'filter': f'installations.global_status = \'{InstallationState.IN_PROGRESS.value}\''}
             active_hosts = self._database.select_data(query_params=query_data, columns=('host',))
+            logger.debug(msg=f"Found active installations on hosts: {', '.join([x['host'] for x in active_hosts])}")
             response['message'] = active_hosts
         return response
 
@@ -152,6 +159,8 @@ class Controller(object):
                       'filter': f'installations.global_status in (\'{InstallationState.NEW.value}\', \
                       \'{InstallationState.IN_PROGRESS.value}\')'}
         active_hosts = self._database.select_data(query_params=query_data, columns=('host',))
+        logger.debug(msg=f"Found active installations on hosts: {', '.join([x['host'] for x in active_hosts])}. "
+                         f"New installation is possible only with force install option enabled!")
         new_nodes = ''
         new_installations = ''
         nodes_to_install = []
@@ -171,6 +180,8 @@ class Controller(object):
                                                **values_to_update)
                 node.pop('force_install', None)
                 nodes_to_install.append(node)
+                logger.debug(msg=f"ScyllaDB will be installed on hosts: "
+                                 f"{', '.join([x['host'] for x in nodes_to_install])}")
         for node in nodes_to_install:
             if node['password'] != 'null':
                 node['password'] = b64encode(node.get('password').encode('utf-8')).decode('utf-8')
@@ -192,6 +203,85 @@ class Controller(object):
             self._database.insert_data(table='installations', columns=columns_to_insert, values=new_installations[:-1])
 
 
+def setup_logging():
+    config = ConfigObject(config_path='./config/installer.conf')
+    log_level = config.log_config['log_level'].upper()
+    log_root_dir = config.log_config['log_root_dir']
+    if not path.exists(log_root_dir):
+        raise FileNotFoundError(f"Log directory '{log_root_dir}' not found!")
+    log_conf = {
+        'version': 1,
+        'formatters': {
+            'cherrypy_log_level': {
+                'format': '%(levelname)s: %(message)s'
+            },
+            'standard': {
+                'format': '%(levelname)s: [%(asctime)s] - <%(module)s> - %(message)s'
+            },
+        },
+        'handlers': {
+            'stdout_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.StreamHandler',
+                'formatter': 'standard',
+                'stream': 'ext://sys.stdout'
+            },
+            'file_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.FileHandler',
+                'formatter': 'standard',
+                'filename': f'{log_root_dir}/application.log',
+                'encoding': 'utf8'
+            },
+            'cherrypy_stdout_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.StreamHandler',
+                'formatter': 'cherrypy_log_level',
+                'stream': 'ext://sys.stdout'
+            },
+            'cherrypy_access_file_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.handlers.RotatingFileHandler',
+                'formatter': 'cherrypy_log_level',
+                'filename': f'{log_root_dir}/cherrypy_access.log',
+                'maxBytes': 10485760,
+                'backupCount': 20,
+                'encoding': 'utf8'
+            },
+            'cherrypy_error_file_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.handlers.RotatingFileHandler',
+                'formatter': 'cherrypy_log_level',
+                'filename': f'{log_root_dir}/cherrypy_errors.log',
+                'maxBytes': 10485760,
+                'backupCount': 20,
+                'encoding': 'utf8'
+            },
+        },
+        'loggers': {
+            '': {
+                'handlers': ['stdout_handler', 'file_handler'],
+                'level': f'{log_level}'
+            },
+            'cherrypy.access': {
+                'handlers': ['cherrypy_access_file_handler'],
+                'level': f'{log_level}',
+                'propagate': False
+            },
+            'cherrypy.error': {
+                'handlers': ['cherrypy_stdout_handler', 'cherrypy_error_file_handler'],
+                'level': f'{log_level}',
+                'propagate': False
+            },
+        }
+    }
+    return log_conf
+
+
 if __name__ == '__main__':
+    cherrypy.engine.unsubscribe('graceful', cherrypy.log.reopen_files)
+    logger = logging.getLogger()
+    logging.config.dictConfig(setup_logging())
     webapp = Controller()
+    logger.info(msg="Controller is starting up")
     cherrypy.quickstart(webapp, '/', './config/installer.conf')

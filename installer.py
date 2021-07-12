@@ -3,11 +3,11 @@
 from controller import ControllerDataBase, InstallationState
 from concurrent.futures.thread import ThreadPoolExecutor
 from enum import Enum, unique
-import sys
 from time import sleep
 from datetime import datetime
 from ssh_interface.ssh import SSHConnection
 import logging
+import logging.config
 from config import ConfigObject
 from jinja2 import FileSystemLoader, Environment, select_autoescape
 from os import path
@@ -290,36 +290,52 @@ class ScyllaInstaller:
 
 
 def setup_logging(log_root_dir, log_level):
-    level_to_set = getattr(logging, log_level.upper(), None)
     if not path.exists(log_root_dir):
         raise FileNotFoundError(f"Log directory '{log_root_dir}' not found!")
-    file_handler = logging.FileHandler(f"{log_root_dir}/installer.log")
-    stdout_handler = logging.StreamHandler(stream=sys.stdout)
-    root_formatter = logging.Formatter("[%(asctime)s] - %(module)s - %(levelname)s: %(message)s")
-    installer_formatter = logging.Formatter("[%(asctime)s] - %(levelname)s: %(message)s")
-    file_handler.setFormatter(installer_formatter)
-    file_handler.setLevel(level_to_set)
-    stdout_handler.setFormatter(root_formatter)
-    stdout_handler.setLevel(level_to_set)
-    root_logger = logging.getLogger()
-    root_logger.addHandler(stdout_handler)
-    root_logger.setLevel(level_to_set)
-    installer_logger = logging.getLogger('installer')
-    installer_logger.addHandler(file_handler)
-    installer_logger.setLevel(level_to_set)
-    return installer_logger
+    log_conf = {
+        'version': 1,
+        'formatters': {
+            'standard': {
+                'format': '%(levelname)s: [%(asctime)s] - <%(module)s> - %(message)s'
+            },
+        },
+        'handlers': {
+            'stdout_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.StreamHandler',
+                'formatter': 'standard',
+                'stream': 'ext://sys.stdout'
+            },
+            'file_handler': {
+                'level': f'{log_level}',
+                'class': 'logging.FileHandler',
+                'formatter': 'standard',
+                'filename': f'{log_root_dir}/application.log',
+                'encoding': 'utf8'
+            }
+        },
+        'loggers': {
+            'installer': {
+                'handlers': ['stdout_handler', 'file_handler'],
+                'level': f'{log_level}'
+            }
+        }
+    }
+    return log_conf
 
 
 if __name__ == '__main__':
     database = ControllerDataBase().instance
     config = ConfigObject(config_path='./config/installer.conf')
     log_configuration = config.log_config
-    main_log = setup_logging(**log_configuration)
+    logging.config.dictConfig(setup_logging(**log_configuration))
+    logger = logging.getLogger('installer')
+    logger.info(msg="Installer is starting up")
     while True:
         installation_list = []
         functions_list = []
         hosts_list = []
-        main_log.debug(msg='Looking for new installations...')
+        logger.debug(msg='Looking for new installations...')
         query_data = {'columns': 'nodes.host, nodes.port, nodes.username, nodes.password, nodes.db_version, \
                        nodes.cluster_name, nodes.seed_node, nodes.os_version, installations.id as installation_id',
                       'join_installations': 'yes', 'join_statuses': 'no',
@@ -327,18 +343,18 @@ if __name__ == '__main__':
         nodes_list = database.select_data(query_params=query_data, columns=('host', 'port', 'username', 'password',
                                                                             'db_version', 'cluster_name', 'seed_node',
                                                                             'os_version', 'installation_id'))
-        main_log.debug(msg=f'Number of found installations: {len(nodes_list)}')
+        logger.debug(msg=f'Number of found installations: {len(nodes_list)}')
         if nodes_list:
             for node in nodes_list:
                 installation_list.append(ScyllaInstaller(installer_db=database, log_config=log_configuration, **node))
-            main_log.info(msg=f"Number of nodes to install: {len(installation_list)}")
+            logger.info(msg=f"Number of nodes to install: {len(installation_list)}")
             parallel_object = ParallelObject()
             for installation in installation_list:
                 functions_list.append(installation.install)
                 hosts_list.append(installation.host)
-            main_log.info(msg=f"Parallel installation threads will be created for nodes: {', '.join(hosts_list)}")
+            logger.info(msg=f"Parallel installation threads will be created for nodes: {', '.join(hosts_list)}")
             try:
                 parallel_object.run(functions=functions_list)
             except Exception as ex:
-                main_log.error(msg=f'Error in parallel execution: {ex}')
+                logger.error(msg=f'Error in parallel execution: {ex}')
         sleep(3)
