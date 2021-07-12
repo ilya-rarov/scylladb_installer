@@ -160,8 +160,8 @@ class Controller(object):
                       'filter': f'installations.global_status in (\'{InstallationState.NEW.value}\', \
                       \'{InstallationState.IN_PROGRESS.value}\')'}
         active_hosts = self._database.select_data(query_params=query_data, columns=('host',))
-        logger.debug(msg=f"Found active installations on hosts: {', '.join([x['host'] for x in active_hosts])}. "
-                         f"New installation is possible only with force install option enabled!")
+        logger.debug(msg=f"Following nodes already have active installations and will be skipped: "
+                         f"{', '.join([x['host'] for x in active_hosts])}.")
         new_nodes = ''
         new_installations = ''
         nodes_to_install = []
@@ -181,8 +181,8 @@ class Controller(object):
                                                **values_to_update)
                 node.pop('force_install', None)
                 nodes_to_install.append(node)
-                logger.debug(msg=f"ScyllaDB will be installed on hosts: "
-                                 f"{', '.join([x['host'] for x in nodes_to_install])}")
+        logger.debug(msg=f"ScyllaDB will be installed on hosts: "
+                         f"{', '.join([x['host'] for x in nodes_to_install])}")
         for node in nodes_to_install:
             if node['password'] != 'null':
                 node['password'] = b64encode(node.get('password').encode('utf-8')).decode('utf-8')
