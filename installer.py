@@ -237,7 +237,10 @@ class ScyllaInstaller:
         nic_name = stdout[0].strip()
         self._installation_logger.info(msg=f'Detected network interface: {nic_name}')
         # run of "scylla_setup"
-        shell_command = f'scylla_setup --no-raid-setup --nic {nic_name} --io-setup 1 --no-rsyslog-setup'
+        if self._db_version == '4.4':
+            shell_command = f'scylla_setup --no-raid-setup --nic {nic_name} --io-setup 1 --no-rsyslog-setup'
+        elif self._db_version == '4.3':
+            shell_command = f'scylla_setup --no-raid-setup --nic {nic_name} --io-setup 1'
         self._execute_shell_command(command_to_execute=shell_command)
         self._add_new_status(status=Status.SCYLLA_CONFIGURED.value)
         self._installation_logger.info(msg=f'Command "scylla_setup" completed successfully on {self._host}.')

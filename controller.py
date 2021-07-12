@@ -76,7 +76,7 @@ class Controller(object):
                                                         \'{InstallationState.SUCCEEDED.value}\')'}
             query_result = self._database.select_data(query_params=query_data, columns=(f'{key}',))
             option_dictionary[key] = [x.get(key) for x in query_result]
-            logger.debug(msg=f"Found following options for the select \"{key}\": {', '.join(option_dictionary[key])}")
+            logger.debug(msg=f"Found following options for the select \"{key}\": {option_dictionary[key]}")
             option_dictionary['today'] = datetime.datetime.now().strftime('%Y-%m-%d')
         return template.render(options=option_dictionary)
 
@@ -116,7 +116,7 @@ class Controller(object):
                                                                                   'db_version', 'os_version',
                                                                                   'seed_node', 'installation_start',
                                                                                   'installation_finish', 'status'))
-        logger.debug(msg=f"Found following statistics records: {', '.join(statistics)}")
+        logger.debug(msg=f"Found following statistics records: {statistics}")
         for record in statistics:
             if record['installation_start']:
                 record['installation_start'] = record.get('installation_start').strftime('%d.%m.%Y %H:%M:%S.%f')
@@ -141,7 +141,7 @@ class Controller(object):
                           'join_installations': 'yes', 'join_statuses': 'yes', 'filter': f'nodes.host = \'{host}\''}
             available_statuses = self._database.select_data(query_params=query_data, columns=('host', 'global_status',
                                                                                               'status_name'))
-            logger.debug(msg=f"Found following statuses for active installations: {', '.join(available_statuses)}")
+            logger.debug(msg=f"Found following statuses for active installations: {available_statuses}")
             response['message'] = available_statuses
         else:
             sleep(3)
