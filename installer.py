@@ -8,6 +8,7 @@ from datetime import datetime
 from ssh_interface.ssh import SSHConnection
 import logging
 import logging.config
+import argparse
 from config import ConfigObject
 from jinja2 import FileSystemLoader, Environment, select_autoescape
 from os import path
@@ -324,9 +325,17 @@ def setup_logging(log_root_dir, log_level):
     return log_conf
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='This module runs ScyllaDB installer.')
+    parser.add_argument('config_path', help='Path to config file', type=str)
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    database = ControllerDataBase().instance
-    config = ConfigObject(config_path='./config/installer.conf')
+    path_to_config = vars(parse_args())['config_path']
+    print(path_to_config)
+    database = ControllerDataBase(config_path=path_to_config).instance
+    config = ConfigObject(config_path=path_to_config)
     log_configuration = config.log_config
     logging.config.dictConfig(setup_logging(**log_configuration))
     logger = logging.getLogger('installer')

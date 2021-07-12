@@ -3,6 +3,7 @@
 import cherrypy
 import datetime
 import logging.config
+import argparse
 from db_interface.sql_database_interface import MySQLDatabase
 from base64 import b64encode
 from enum import Enum, unique
@@ -30,8 +31,8 @@ class UnknownDataBaseType(Exception):
 
 
 class ControllerDataBase:
-    def __init__(self):
-        config = ConfigObject(config_path='./config/installer.conf')
+    def __init__(self, config_path):
+        config = ConfigObject(config_path=config_path)
         database_config = config.db_config
         if database_config['type'] == 'mysql':
             self._instance = MySQLDatabase(user=database_config['user'],
@@ -51,7 +52,7 @@ class ControllerDataBase:
 
 class Controller(object):
     def __init__(self):
-        self._database = ControllerDataBase().instance
+        self._database = ControllerDataBase(config_path=path_to_config).instance
 
     @cherrypy.expose
     def index(self):
@@ -204,7 +205,7 @@ class Controller(object):
 
 
 def setup_logging():
-    config = ConfigObject(config_path='./config/installer.conf')
+    config = ConfigObject(config_path=path_to_config)
     log_level = config.log_config['log_level'].upper()
     log_root_dir = config.log_config['log_root_dir']
     if not path.exists(log_root_dir):
@@ -278,10 +279,17 @@ def setup_logging():
     return log_conf
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='This module runs CherryPy web server.')
+    parser.add_argument('config_path', help='Path to config file', type=str)
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
+    path_to_config = vars(parse_args())['config_path']
     cherrypy.engine.unsubscribe('graceful', cherrypy.log.reopen_files)
     logger = logging.getLogger()
     logging.config.dictConfig(setup_logging())
     webapp = Controller()
     logger.info(msg="Controller is starting up")
-    cherrypy.quickstart(webapp, '/', './config/installer.conf')
+    cherrypy.quickstart(webapp, '/', path_to_config)
