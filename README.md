@@ -1,7 +1,7 @@
 # ScyllaDB Installer
 ScyllaDB Installer allows user to install ScyllaDB cluster of several nodes. All the nodes of the cluster will be installed in parallel.
 
-###### How to install and start this application
+### How to install and start this application
 To install ScyllaDB installer on your Linux machine do following:
 1. Clone repository to your local machine:
 
@@ -27,7 +27,7 @@ To install ScyllaDB installer on your Linux machine do following:
 
 `./startup.py Path_to_config_file`
 
-###### How to prepare nodes for installations
+### How to prepare nodes for installations
 1. For the installation you can use root or any regular user with sudo privileges.
 
 2. You may configure a pair of SSH keys, and they will be used by application during the installation process.
@@ -43,4 +43,18 @@ To configure the SSH keys on the ScyllaDB Installer machine run `ssh-keygen` (le
 
 `systemctl disable firewalld`
 
-###### Known limitations of the application
+### Known limitations of ScyllaDB Installer
+1. Installer supports only nodes with one wired or wireless network interface named with systemd predictable names scheme like 'eno***', 'ens***', 'enp***', 'enx***', 'wlo***', 'wls***', 'wnp***', 'wnx***'.
+
+2. For ScyllaDB 4.4 scylla-setup is started with following options: 
+   `--no-raid-setup --io-setup 1 --no-rsyslog-setup`, for 4.3 the options are: 
+
+3. Only MySQL database supported now (tested with version 8.0.24).
+
+4. Tested only with IP addresses as hosts.
+
+5. Cassandra-stress runs in limited mode:
+
+`cassandra-stress write -mode cql3 native -node Your_Hostname_Or_IP_address -rate 'threads=2 "throttle=500/s' -pop seq=1..10000`
+
+6. Results of cassandra-stress is saved in `~/cassandra-stress.log`.
